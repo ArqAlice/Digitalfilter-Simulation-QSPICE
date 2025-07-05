@@ -8,14 +8,16 @@
 #include <math.h>
 #include <string.h>
 
-#define RATIO_OVERSAMPLING 32
-#define SIZE_USB_BUFFER 256
-#define SIZE_OUTPUT_BUFFER 8192
-#define OVERSAMPLING_TIMING_PRESCALE 1
+#define RATIO_UPSAMPLING (32)
+#define SIZE_USB_BUFFER (256)
+#define SIZE_OUTPUT_BUFFER (8192)
+#define OVERSAMPLING_TIMING_PRESCALE (1)
 
-#define RATIO_OVERSAMPLING0 4
-#define RATIO_OVERSAMPLING1 2
-#define RATIO_OVERSAMPLING2 4
+#define RATIO_UPSAMPLING0 (4)
+#define RATIO_UPSAMPLING1 (2)
+#define RATIO_UPSAMPLING2 (4)
+
+#define GAIN_ANTICLIPPING (0.6)
 
 typedef struct
 {
@@ -218,63 +220,76 @@ uint32_t connect_2ch(int32_t *p_in0, int32_t *p_in1, int32_t *p_out, uint32_t le
    return out_index;
 }
 
-// oversampling NOS
-uint32_t NOS_filter(uint32_t length, int32_t *p_in, int32_t *p_out, uint8_t oversampling_ratio)
+// upsampling NOS
+uint32_t NOS_filter(uint32_t length, int32_t *p_in, int32_t *p_out, uint8_t upsampling_ratio)
 {
    uint32_t length_buffer = length;
+
+   // データの長さ(length)の数だけ繰り返す
    while (length_buffer--)
    {
-      for (int i = 0; i < oversampling_ratio - 1; i++)
+      // ある時点での値をupsampling_ratio回だけ繰り返す
+      for (int i = 0; i < upsampling_ratio - 1; i++)
          *p_out++ = *p_in;
       *p_out++ = *(p_in++);
    }
-   return length * oversampling_ratio;
+   return length * upsampling_ratio;
 }
 
-// oversampling FIR 1ch ver
+// FIR filter
 uint32_t FIR_filter(uint32_t length, int32_t *p_in, int32_t *p_out, double *delay, const double *h, const uint16_t size_tap)
 {
    int count_out_size = 0;
+
+   // データの長さ(lemgth)の数だけ繰り返す
    for (int sample = 0; sample < length; sample++)
    {
       double temporary = 0;
 
       *delay = (double)p_in[sample];
 
+      // FIRフィルタ演算 タップ数の数だけ足しこんでいく
       for (int tap = 0; tap < size_tap; tap++)
          temporary += h[tap] * (*(delay + tap));
 
+      // 遅延データの更新
       for (int tap = size_tap - 1; tap > 0; tap--)
          *(delay + tap) = *(delay + tap - 1);
 
-      p_out[sample] = (int32_t)temporary;
+      p_out[sample] = (int32_t)temporary; // 演算結果を出力
       count_out_size++;
    }
    return count_out_size;
 }
 
-// oversampling biquad IIR filter 1ch ver
+// biquad IIR filter
 uint32_t IIR_BQ_filter(uint32_t length, int32_t *p_in, int32_t *p_out, double *delay_, const double *k_, const uint16_t size_tap)
 {
    int count_out_size = 0;
+
+   // データの長さ(lemgth)の数だけ繰り返す
    for (int32_t sample = 0; sample < length; sample++)
    {
-      double temporary = (double)p_in[sample];
+      double temporary = (double)p_in[sample]; // FIRにおけるある時点での値
+
+      // 段数(size_tap)の分だけフィルタ演算を繰り返す
       for (int32_t tap = 0; tap < size_tap; tap++)
       {
          double *delay = delay_ + tap * 4;
          double *k = (double *)k_ + tap * 6;
          double temporary_old = temporary;
 
+         // IIRフィルタ演算
          temporary = temporary * (*(k + 0)) + *(delay + 0) * (*(k + 1)) + *(delay + 1) * (*(k + 2)) - *(delay + 2) * (*(k + 4)) - *(delay + 3) * (*(k + 5));
 
+         // 遅延データの更新
          *(delay + 1) = *(delay + 0);
          *(delay + 0) = temporary_old;
          *(delay + 3) = *(delay + 2);
          *(delay + 2) = temporary;
       }
 
-      p_out[sample] = (int32_t)temporary;
+      p_out[sample] = (int32_t)temporary; // 演算結果を出力
       count_out_size++;
    }
    return count_out_size;
@@ -350,48 +365,51 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
    // scheduler
    if (clock == 1 && clock_old == 0)
    {
-      can_output = true;
-      if (prescale_counter >= RATIO_OVERSAMPLING)
-      {
-         can_write_usb_buffer = true;
-         prescale_counter = 0;
-      }
-      prescale_counter++;
-   }
-   clock_old = clock;
+      can_output = true; // 出力タイミング制御用変数
 
-   // input USB buffer
+      // ここで分周を行っています
+      if (prescale_counter >= RATIO_UPSAMPLING)
+      {
+         can_write_usb_buffer = true; // 入力リングバッファへのサンプルホールドタイミング制御用変数です
+         prescale_counter = 0;        // 分周カウンタ値を初期化して繰り返します
+      }
+      prescale_counter++; // 分周カウンタを増分します
+   }
+   clock_old = clock; // クロックの前回値を保存します
+
+   // input buffer
    if (can_write_usb_buffer)
    {
-      int16_t is_buffer_full_L = 0;
-      int16_t is_buffer_full_R = 0;
+      int16_t is_buffer_full_L = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
+      int16_t is_buffer_full_R = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
 
-      is_buffer_full_L |= usb_buffer_L.write((int32_t)signal_in0);
-      is_buffer_full_R |= usb_buffer_R.write((int32_t)signal_in1);
+      is_buffer_full_L |= usb_buffer_L.write(((int32_t)(signal_in0 * GAIN_ANTICLIPPING)) << 16); // ここでバッファに入力データを格納する
+      is_buffer_full_R |= usb_buffer_R.write(((int32_t)(signal_in1 * GAIN_ANTICLIPPING)) << 16); // ここでバッファに入力データを格納する
       // debug1 = is_buffer_full_L;
-      can_write_usb_buffer = false;
+      can_write_usb_buffer = false; // 立てたフラグを解除する
    }
 
-   // output USB buffer and oversampling
+   // upsampling and cueue output buffer
+   // push_buffer信号に同期して実行される
    if (push_buffer == 1 && push_buffer_old == 0)
    {
-      // USB dequeue
-      uint32_t size_buffer = usb_buffer_L.get_size();
+      // decueue input ringbuffer バッファからデータを読み込む
+      uint32_t size_buffer = usb_buffer_L.get_size(); // 入力バッファに格納されたデータ量を取得する
       debug1 = size_buffer;
-      int32_t *usb_dequeue_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer);
-      int32_t *usb_dequeue_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer);
-      usb_buffer_L.read_array(usb_dequeue_buffer_L, size_buffer);
-      usb_buffer_R.read_array(usb_dequeue_buffer_R, size_buffer);
+      int32_t *usb_dequeue_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer); // バッファから取り出すデータの仮保存先(配列)を割り当てる
+      int32_t *usb_dequeue_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer); // バッファから取り出すデータの仮保存先(配列)を割り当てる
+      usb_buffer_L.read_array(usb_dequeue_buffer_L, size_buffer);                       // バッファから仮保存先の配列にデータを読み込む
+      usb_buffer_R.read_array(usb_dequeue_buffer_R, size_buffer);                       // バッファから仮保存先の配列にデータを読み込む
 
-      // Prepareing buffers
-      int32_t *NOS_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_OVERSAMPLING);
-      int32_t *NOS_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_OVERSAMPLING);
-      int32_t *output_pre_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_OVERSAMPLING);
-      int32_t *output_pre_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_OVERSAMPLING);
+      // Prepareing buffers アップサンプリング処理の一時データ保存先を作る
+      int32_t *NOS_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
+      int32_t *NOS_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
+      int32_t *output_pre_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
+      int32_t *output_pre_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
 
-      // upsampling0 : 44.1kHz to 176.4kHz
-      uint32_t size_NOS0 = NOS_filter(size_buffer, usb_dequeue_buffer_L, NOS_buffer_L, RATIO_OVERSAMPLING0);
-      NOS_filter(size_buffer, usb_dequeue_buffer_R, NOS_buffer_R, RATIO_OVERSAMPLING0);
+      // upsampling0 : 44.1kHz to 176.4kHz NOS→FIR
+      uint32_t size_NOS0 = NOS_filter(size_buffer, usb_dequeue_buffer_L, NOS_buffer_L, RATIO_UPSAMPLING0);
+      NOS_filter(size_buffer, usb_dequeue_buffer_R, NOS_buffer_R, RATIO_UPSAMPLING0);
 
       uint32_t size_filter0_out = FIR_filter(size_NOS0,
                                              NOS_buffer_L,
@@ -406,10 +424,10 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
                  fir_delay_buffer_R,
                  coef_fir_filter_4x_0,
                  size_coef_fir_filter_4x_0);
-      
-      // upsampling1 : 176.4kHz to 352.8kHz
-      uint32_t size_NOS1 = NOS_filter(size_filter0_out, output_pre_buffer_L, NOS_buffer_L, RATIO_OVERSAMPLING1);
-      NOS_filter(size_filter0_out, output_pre_buffer_R, NOS_buffer_R, RATIO_OVERSAMPLING1);
+
+      // upsampling1 : 176.4kHz to 352.8kHz  NOS→IIR
+      uint32_t size_NOS1 = NOS_filter(size_filter0_out, output_pre_buffer_L, NOS_buffer_L, RATIO_UPSAMPLING1);
+      NOS_filter(size_filter0_out, output_pre_buffer_R, NOS_buffer_R, RATIO_UPSAMPLING1);
 
       uint32_t size_filter1_out = IIR_BQ_filter(size_NOS1,
                                                 NOS_buffer_L,
@@ -424,10 +442,10 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
                     bq_delay_buffer_R_0,
                     (const double *)coef_bq_filter_2x_2,
                     size_coef_bqfilter_2x_2 / 6);
-      
-      // upsampling2 : 352.8kHz to 1411.2kHz
-      uint32_t size_NOS2 = NOS_filter(size_filter1_out, output_pre_buffer_L, NOS_buffer_L, RATIO_OVERSAMPLING2);
-      NOS_filter(size_filter1_out, output_pre_buffer_R, NOS_buffer_R, RATIO_OVERSAMPLING2);
+
+      // upsampling2 : 352.8kHz to 1411.2kHz  NOS→IIR
+      uint32_t size_NOS2 = NOS_filter(size_filter1_out, output_pre_buffer_L, NOS_buffer_L, RATIO_UPSAMPLING2);
+      NOS_filter(size_filter1_out, output_pre_buffer_R, NOS_buffer_R, RATIO_UPSAMPLING2);
 
       uint32_t size_filter2_out = IIR_BQ_filter(size_NOS2,
                                                 NOS_buffer_L,
@@ -442,8 +460,8 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
                     bq_delay_buffer_R_1,
                     (const double *)coef_bq_filter_4x_0,
                     size_coef_bq_filter_4x_0 / 6);
-      
-      // packing output buffer
+
+      // packing output buffer 出力バッファに書き込む
       output_buffer_L.write_array(output_pre_buffer_L, size_filter2_out);
       output_buffer_R.write_array(output_pre_buffer_R, size_filter2_out);
 
@@ -454,22 +472,24 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
       free(output_pre_buffer_L);
       free(output_pre_buffer_R);
    }
-   push_buffer_old = push_buffer;
+   push_buffer_old = push_buffer; // push_bufferの前回値を更新
 
    // output
+   // clockに同期して出力処理が実行される
    if (can_output)
    {
-      // debug3 = output_buffer_L.get_size();
       if (output_buffer_L.get_size() > 0)
       {
-         int32_t out_buffer = 0;
+         int32_t out_buffer = 0; // 出力データの読み出し先の一時変数
 
+         // Lchの出力データをバッファから読み込む
          output_buffer_L.read(&out_buffer);
          output0 = (double)out_buffer;
 
+         // Rchの出力データをバッファから読み込む
          output_buffer_R.read(&out_buffer);
          output1 = (double)out_buffer;
       }
-      can_output = false;
+      can_output = false; // フラグを下す
    }
 }

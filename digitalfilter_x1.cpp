@@ -11,16 +11,33 @@
 #define INPUT_SIGNAL_FREQ (44100)
 #define GAIN_ANTICLIPPING (0.72)
 
+#define ALL_FIR (false)          // すべてのフィルタをFIRにする
+#define FIR_384K (false)          // 352.8kHz/384kHzへの変換にFIRフィルタを使う
+#define LINEAR_PHASE_FIR (true)  // 初段FIRを線形位相FIRにする
+
 #define RATIO_UPSAMPLING0 (4)
 #define RATIO_UPSAMPLING1 (2)
-#define RATIO_UPSAMPLING2 (4)
+#define RATIO_UPSAMPLING2 (2)
+#define RATIO_UPSAMPLING3 (4)
 
-#define RATIO_UPSAMPLING (RATIO_UPSAMPLING0 * RATIO_UPSAMPLING1 * RATIO_UPSAMPLING2)
+#ifdef INPUT_SIGNAL_FREQ == 44100 || INPUT_SIGNAL_FREQ == 48000
+#define RATIO_UPSAMPLING (RATIO_UPSAMPLING0 * RATIO_UPSAMPLING2 * RATIO_UPSAMPLING3)
+#elif INPUT_SIGNAL_FREQ == 88200 || INPUT_SIGNAL_FREQ == 96000
+#define RATIO_UPSAMPLING (RATIO_UPSAMPLING1 * RATIO_UPSAMPLING2 * RATIO_UPSAMPLING3)
+#endif
+
+#ifdef LINEAR_PHASE_FIR == true
+#define FIR_4X_0 coef_fir_filter_4x_0_linear
+#define FIR_2X_1 coef_fir_filter_2x_1_linear
+#else
+#define FIR_4X_0 coef_fir_filter_4x_0
+#define FIR_2X_1 coef_fir_filter_2x_1
+#endif
+
 #define SIZE_USB_BUFFER ((INPUT_SIGNAL_FREQ / 1000 + 2) * 2)
-#define SIZE_OUTPUT_BUFFER (SIZE_USB_BUFFER * RATIO_UPSAMPLING0 * RATIO_UPSAMPLING1 * RATIO_UPSAMPLING2)
+#define SIZE_OUTPUT_BUFFER (SIZE_USB_BUFFER * RATIO_UPSAMPLING)
 #define OVERSAMPLING_TIMING_PRESCALE (1)
 #define THRESH_SIZE_START_UPSAMPLING (INPUT_SIGNAL_FREQ / 1000)
-
 
 // Filter Params
 
@@ -49,6 +66,31 @@ const float coef_fir_filter_4x_0[] =
      -4.143686752457605e-08, -4.970688922625634e-09, 1.4789229734804425e-08, 1.0044371520647718e-08, -2.4394975483586873e-09, -3.496525474792943e-09,
      6.576436052612324e-10, 2.377579249192807e-10};
 
+// FIR 4x filter0  44.1k/48k to 176.4k/192k
+const float coef_fir_filter_4x_0_linear[] =
+    {-8.009496126334944e-09, -2.770953636200823e-08, -1.816109133458034e-08, 9.79851629247096e-08, 3.455575595402432e-07, 5.49487748591344e-07,
+     2.912897501488598e-07, -8.241355440275666e-07, -2.583772780225867e-06, -3.6754210848823824e-06, -2.0128733833483846e-06, 3.6792785636834877e-06,
+     1.1630854998143024e-05, 1.6018736812415644e-05, 9.316651633381701e-06, -1.1676176829871593e-05, -3.9296676642302204e-05, -5.3952612618720815e-05,
+     -3.3410678494903924e-05, 2.9166321740449355e-05, 0.00010911866180387778, 0.00015162766847689102, 9.971172613544814e-05, -5.984023225557461e-05,
+     -0.000261414876911818, -0.0003712312691783468, -0.00025832690602339267, 0.0001016517871698456, 0.0005568372816041263, 0.0008140614555244785,
+     0.0005974974669591613, -0.00013778233502393983, -0.001076777066384275, -0.0016309537459632695, -0.0012594408706767778, 0.00012343351380525685,
+     0.001920548022668553, 0.0030329752621310675, 0.002460140947775016, 3.173153883327255e-05, -0.003203133363794069, -0.00531089980757093,
+     -0.004522883918145737, -0.0004887751134320794, 0.005065250860325613, 0.00889249835027846, 0.007960974437457836, 0.0015289553068368307,
+     -0.007727615261394335, -0.014530908421516432, -0.013734261686806585, -0.003696995702829575, 0.011696327732435598, 0.023988599007541155,
+     0.024218185884434605, 0.008377751390101242, -0.018657126321260653, -0.04333872450509367, -0.04852430324681542, -0.02155190366034881,
+     0.038474151341485845, 0.11806333393939004, 0.19326925104252618, 0.23888507374925808, 0.23888507374925808, 0.19326925104252618,
+     0.11806333393939004, 0.038474151341485845, -0.02155190366034881, -0.04852430324681542, -0.04333872450509367, -0.018657126321260653,
+     0.008377751390101242, 0.024218185884434605, 0.023988599007541155, 0.011696327732435598, -0.003696995702829575, -0.013734261686806585,
+     -0.014530908421516432, -0.007727615261394335, 0.0015289553068368307, 0.007960974437457836, 0.00889249835027846, 0.005065250860325613,
+     -0.0004887751134320794, -0.004522883918145737, -0.00531089980757093, -0.003203133363794069, 3.173153883327255e-05, 0.002460140947775016,
+     0.0030329752621310675, 0.001920548022668553, 0.00012343351380525685, -0.0012594408706767778, -0.0016309537459632695, -0.001076777066384275,
+     -0.00013778233502393983, 0.0005974974669591613, 0.0008140614555244785, 0.0005568372816041263, 0.0001016517871698456, -0.00025832690602339267,
+     -0.0003712312691783468, -0.000261414876911818, -5.984023225557461e-05, 9.971172613544814e-05, 0.00015162766847689102, 0.00010911866180387778,
+     2.9166321740449355e-05, -3.3410678494903924e-05, -5.3952612618720815e-05, -3.9296676642302204e-05, -1.1676176829871593e-05, 9.316651633381701e-06,
+     1.6018736812415644e-05, 1.1630854998143024e-05, 3.6792785636834877e-06, -2.0128733833483846e-06, -3.6754210848823824e-06, -2.583772780225867e-06,
+     -8.241355440275666e-07, 2.912897501488598e-07, 5.49487748591344e-07, 3.455575595402432e-07, 9.79851629247096e-08, -1.816109133458034e-08,
+     -2.770953636200823e-08, -8.009496126334944e-09};
+
 const uint32_t size_coef_fir_filter_4x_0 = sizeof(coef_fir_filter_4x_0) / sizeof(float);
 
 // FIR 2x filter1  88.2k/96k to 176.4k/192k
@@ -62,7 +104,33 @@ const float coef_fir_filter_2x_1[] =
      0.14580390607737992, 0.2209550550852799, 0.24208720183672777, 0.21316488764332628, 0.1562901984488822, 0.09646656357981995,
      0.049991614557148484, 0.021443941069533172, 0.0073986748359036875, 0.0019479035135361207, 0.0003523537145792295, 3.3360564843645475e-05};
 
+// FIR 2x filter1  88.2k/96k to 176.4k/192k
+const float coef_fir_filter_2x_1_linear[] =
+    {-1.0275674508934205e-08, -4.324089533053845e-07, -2.230429764186244e-06, -3.2590253034100063e-06, 9.289710077712106e-06, 5.537011059358278e-05,
+     0.0001228792963047623, 0.00010387390381127505, -0.00019794814868885768, -0.0008597521635627645, -0.0014723673287556978, -0.001000753018766069,
+     0.0015820409590107086, 0.0058445030801684604, 0.008694986959353222, 0.005232018701947746, -0.007456453605203147, -0.02530825355873449,
+     -0.035355894638048724, -0.02054775237604713, 0.029475493471675492, 0.10809519482908671, 0.19018600144098688, 0.24280345451448584,
+     0.24280345451448584, 0.19018600144098688, 0.10809519482908671, 0.029475493471675492, -0.02054775237604713, -0.035355894638048724,
+     -0.02530825355873449, -0.007456453605203147, 0.005232018701947746, 0.008694986959353222, 0.0058445030801684604, 0.0015820409590107086,
+     -0.001000753018766069, -0.0014723673287556978, -0.0008597521635627645, -0.00019794814868885768, 0.00010387390381127505, 0.0001228792963047623,
+     5.537011059358278e-05, 9.289710077712106e-06, -3.2590253034100063e-06, -2.230429764186244e-06, -4.324089533053845e-07, -1.0275674508934205e-08};
+
 const uint32_t size_coef_fir_filter_2x_1 = sizeof(coef_fir_filter_2x_1) / sizeof(float);
+
+// FIR 2x filter2  176.4k/192k to 352.8k/384k
+const float coef_fir_filter_2x_2[] =
+    {6.134149815711763e-09, 2.0961044497408522e-07, 9.872475785451564e-07, 1.3550642232681976e-06, -3.686489904087661e-06, -2.120235415117057e-05,
+     -4.578270915097058e-05, -3.790912938244424e-05, 7.115426911588754e-05, 0.0003058037200642476, 0.0005202132636709615, 0.000352332268271818,
+     -0.0005563482984773735, -0.0020561766044494586, -0.003061968958891906, -0.0018427650139652627, 0.002619580401797262, 0.008820072457269101,
+     0.012102318153637423, 0.006788590267339877, -0.009106904257911089, -0.029357159903558104, -0.03927791505124764, -0.022034260522263236,
+     0.030739250218625325, 0.11042415494350487, 0.19164645252718895, 0.24300959874647046, 0.24300959874647046, 0.19164645252718895,
+     0.11042415494350487, 0.030739250218625325, -0.022034260522263236, -0.03927791505124764, -0.029357159903558104, -0.009106904257911089,
+     0.006788590267339877, 0.012102318153637423, 0.008820072457269101, 0.002619580401797262, -0.0018427650139652627, -0.003061968958891906,
+     -0.0020561766044494586, -0.0005563482984773735, 0.000352332268271818, 0.0005202132636709615, 0.0003058037200642476, 7.115426911588754e-05,
+     -3.790912938244424e-05, -4.578270915097058e-05, -2.120235415117057e-05, -3.686489904087661e-06, 1.3550642232681976e-06, 9.872475785451564e-07,
+     2.0961044497408522e-07, 6.134149815711763e-09};
+     
+     const uint32_t size_coef_fir_filter_2x_2 = sizeof(coef_fir_filter_2x_2) / sizeof(float);
 
 // BQ-IIR 2x filter2  176.4k/192k to 352.8k/384k
 const float coef_bq_filter_2x_2[][6] =
@@ -100,19 +168,19 @@ union uData
 
 void int32_to_float_array(int32_t *input, float *output, uint32_t length)
 {
-   for(int i=0; i<length; i++)
+   for (int i = 0; i < length; i++)
       output[i] = (float)input[i];
 }
 
 void float_to_int32_array(float *input, int32_t *output, uint32_t length)
 {
-   for(int i=0; i<length; i++)
+   for (int i = 0; i < length; i++)
       output[i] = (int32_t)input[i];
 }
 
-void f32_scale_array(float* input, float* output, float gain, uint32_t length)
+void f32_scale_array(float *input, float *output, float gain, uint32_t length)
 {
-   for(int i=0; i<length; i++)
+   for (int i = 0; i < length; i++)
       output[i] = input[i] * gain;
 }
 
@@ -229,7 +297,7 @@ uint32_t NOS_filter(uint32_t length, float *p_in, float *p_out, uint8_t upsampli
 class FIR_FILTER
 {
 public:
-   FIR_FILTER(const uint32_t size, uint32_t upsampling_ratio, const float* h_)
+   FIR_FILTER(const uint32_t size, uint32_t upsampling_ratio, const float *h_)
    {
       h = new float[size];
       delay = new float[size];
@@ -244,12 +312,12 @@ public:
       memset(delay, 0, sizeof(float) * size_tap);
    };
 
-   uint32_t interpolate(uint32_t length, float* p_in, float* p_out)
+   uint32_t interpolate(uint32_t length, float *p_in, float *p_out)
    {
       uint32_t length_buffer = length;
-      float* p_in_buf = p_in;
-      float* nos = new float[length * ratio];
-      float* p_nos_buf = nos;
+      float *p_in_buf = p_in;
+      float *nos = new float[length * ratio];
+      float *p_nos_buf = nos;
 
       // データの長さ(length)の数だけ繰り返す
       while (length_buffer--)
@@ -281,8 +349,8 @@ public:
    }
 
 private:
-   float* h;
-   float* delay;
+   float *h;
+   float *delay;
    uint32_t size_tap;
    uint32_t ratio;
 };
@@ -290,7 +358,7 @@ private:
 class IIR_FILTER
 {
 public:
-   IIR_FILTER(const uint32_t size, uint32_t upsampling_ratio, const float* k_)
+   IIR_FILTER(const uint32_t size, uint32_t upsampling_ratio, const float *k_)
    {
       k = new float[size];
       size_k = size;
@@ -306,12 +374,12 @@ public:
       memset(delay, 0, sizeof(float) * size_delay);
    };
 
-   uint32_t interpolate(uint32_t length, float* p_in, float* p_out)
+   uint32_t interpolate(uint32_t length, float *p_in, float *p_out)
    {
       uint32_t length_buffer = length;
-      float* p_in_buf = p_in;
-      float* nos = new float[length * ratio];
-      float * p_nos_buf = nos;
+      float *p_in_buf = p_in;
+      float *nos = new float[length * ratio];
+      float *p_nos_buf = nos;
 
       // データの長さ(length)の数だけ繰り返す
       while (length_buffer--)
@@ -351,8 +419,8 @@ public:
    }
 
 private:
-   float* k;
-   float* delay;
+   float *k;
+   float *delay;
    uint32_t size_k;
    uint32_t size_delay;
    uint32_t ratio;
@@ -378,17 +446,19 @@ RING_BUFFER usb_buffer_R(SIZE_USB_BUFFER);
 RING_BUFFER output_buffer_L(SIZE_OUTPUT_BUFFER);
 RING_BUFFER output_buffer_R(SIZE_OUTPUT_BUFFER);
 
-FIR_FILTER FIR4x0L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, coef_fir_filter_4x_0);
-FIR_FILTER FIR4x0R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, coef_fir_filter_4x_0);
-IIR_FILTER IIR2x2L(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
-IIR_FILTER IIR2x2R(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
-IIR_FILTER IIR4x3L(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
-IIR_FILTER IIR4x3R(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
+FIR_FILTER FIR4x0L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, FIR_4X_0);
+FIR_FILTER FIR4x0R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, FIR_4X_0);
+FIR_FILTER FIR2x1L(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, FIR_2X_1);
+FIR_FILTER FIR2x1R(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, FIR_2X_1);
+FIR_FILTER FIR2x2L(size_coef_fir_filter_2x_2, RATIO_UPSAMPLING2, coef_fir_filter_2x_2);
+FIR_FILTER FIR2x2R(size_coef_fir_filter_2x_2, RATIO_UPSAMPLING2, coef_fir_filter_2x_2);
+FIR_FILTER FIR4x3L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING3, coef_fir_filter_4x_0_linear);
+FIR_FILTER FIR4x3R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING3, coef_fir_filter_4x_0_linear);
 
-FIR_FILTER FIR2x2L(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, coef_fir_filter_2x_1);
-FIR_FILTER FIR2x2R(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, coef_fir_filter_2x_1);
-FIR_FILTER FIR4x3L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING2, coef_fir_filter_4x_0);
-FIR_FILTER FIR4x3R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING2, coef_fir_filter_4x_0);
+IIR_FILTER IIR2x2L(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING2, &coef_bq_filter_2x_2[0][0]);
+IIR_FILTER IIR2x2R(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING2, &coef_bq_filter_2x_2[0][0]);
+IIR_FILTER IIR4x3L(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING3, &coef_bq_filter_4x_3[0][0]);
+IIR_FILTER IIR4x3R(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING3, &coef_bq_filter_4x_3[0][0]);
 
 static unsigned char clock_old = 0;
 static unsigned char push_buffer_old = 0;
@@ -426,14 +496,14 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
    }
    clock_old = clock; // クロックの前回値を保存します
 
-   //debug1 = (double)can_write_usb_buffer;
+   // debug1 = (double)can_write_usb_buffer;
 
    // input buffer
    if (can_write_usb_buffer)
    {
-      int16_t is_buffer_full_L = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
-      int16_t is_buffer_full_R = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
-
+      int16_t is_buffer_full_L = 0;                                                // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
+      int16_t is_buffer_full_R = 0;                                                // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
+                                                                                   // ↓ここで0.5を引くのは丸め誤差でのクリッピング防止のため
       is_buffer_full_L |= usb_buffer_L.write(((int32_t)(signal_in0 - 0.5)) << 16); // ここでバッファに入力データを格納する
       is_buffer_full_R |= usb_buffer_R.write(((int32_t)(signal_in1 - 0.5)) << 16); // ここでバッファに入力データを格納する
 
@@ -447,17 +517,19 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
    // push_buffer信号に同期して実行される
    if (push_buffer == 1 && push_buffer_old == 0)
    {
+      uint32_t len_L, len_R;
       // decueue input ringbuffer バッファからデータを読み込む
       uint32_t length = usb_buffer_L.get_size(); // 入力バッファに格納されたデータ量を取得する
-      if(length >= THRESH_SIZE_START_UPSAMPLING)
+
+      if (length >= THRESH_SIZE_START_UPSAMPLING)
       {
          int32_t *usb_dequeue_buffer_L = new int32_t[length];   // バッファから取り出すデータの仮保存先(配列)を割り当てる
          int32_t *usb_dequeue_buffer_R = new int32_t[length];   // バッファから取り出すデータの仮保存先(配列)を割り当てる
          usb_buffer_L.read_array(usb_dequeue_buffer_L, length); // バッファから仮保存先の配列にデータを読み込む
          usb_buffer_R.read_array(usb_dequeue_buffer_R, length); // バッファから仮保存先の配列にデータを読み込む
 
-         float* buffer_inL_float = new float[length];
-         float* buffer_inR_float = new float[length];
+         float *buffer_inL_float = new float[length];
+         float *buffer_inR_float = new float[length];
          int32_to_float_array(usb_dequeue_buffer_L, buffer_inL_float, length);
          int32_to_float_array(usb_dequeue_buffer_R, buffer_inR_float, length);
 
@@ -471,25 +543,47 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
          f32_scale_array(buffer_inL_float, upsampling_buffer_L0, GAIN_ANTICLIPPING, length);
          f32_scale_array(buffer_inR_float, upsampling_buffer_R0, GAIN_ANTICLIPPING, length);
 
-         // upsampling0 : 44.1kHz to 176.4kHz FIR
-         uint32_t len_L = FIR4x0L.interpolate(length, upsampling_buffer_L0, upsampling_buffer_L1);
-         uint32_t len_R = FIR4x0R.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
+         // upsampling0, 1 : to 176.4kHz/192kHz
+         if (INPUT_SIGNAL_FREQ == 44100 || INPUT_SIGNAL_FREQ == 48000)
+         {
+            // upsampling0 : 44.1kHz/48kHz to 176.4kHz/192kHz
+            len_L = FIR4x0L.interpolate(length, upsampling_buffer_L0, upsampling_buffer_L1);
+            len_R = FIR4x0R.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
+         }
+         else if (INPUT_SIGNAL_FREQ == 88200 || INPUT_SIGNAL_FREQ == 96000)
+         {
+            // upsampling1 : 88.2kHz/96kHz to 176.4kHz/192kHz
+            len_L = FIR2x1L.interpolate(length, upsampling_buffer_L0, upsampling_buffer_L1);
+            len_R = FIR2x1R.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
+         }
 
-         // upsampling1 : 176.4kHz to 352.8kHz IIR
-         len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
-         len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
-         //len_L = FIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
-         //len_R = FIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         // upsampling2 : 176.4kHz/192kHz to 352.8kHz/384kHz
+         if (ALL_FIR || FIR_384K)
+         {
+            len_L = FIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+            len_R = FIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         }
+         else
+         {
+            len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+            len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         }
 
-         // upsampling2 : 352.8kHz to 1411.2kHz IIR
-         len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
-         len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
-         //len_L = FIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
-         //len_R = FIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         // upsampling2 : 352.8kHz/384kHz to 1411.2kHz/1536kHz
+         if (ALL_FIR)
+         {
+            len_L = FIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+            len_R = FIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         }
+         else
+         {
+            len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+            len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         }
 
          // floatをint32にキャスト
-         int32_t* out_buf_L = new int32_t[len_L];
-         int32_t* out_buf_R = new int32_t[len_R];
+         int32_t *out_buf_L = new int32_t[len_L];
+         int32_t *out_buf_R = new int32_t[len_R];
          float_to_int32_array(upsampling_buffer_L1, out_buf_L, len_L);
          float_to_int32_array(upsampling_buffer_R1, out_buf_R, len_R);
 

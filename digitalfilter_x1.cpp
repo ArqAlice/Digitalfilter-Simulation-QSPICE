@@ -238,11 +238,10 @@ public:
       // データの長さ(length)の数だけ繰り返す
       while (length_buffer--)
       {
-         *p_nos_buf++ = *p_in_buf;
-         // 0をupsampling_ratio回だけ繰り返す
+         // ある時点での値をupsampling_ratio回だけ繰り返す
          for (int i = 0; i < ratio - 1; i++)
-            *p_nos_buf++ = 0;
-         p_in_buf++;
+            *p_nos_buf++ = *p_in_buf;
+         *p_nos_buf++ = *p_in_buf++;
       }
 
       // データの長さ(length)の数だけ繰り返す
@@ -303,17 +302,16 @@ public:
       // データの長さ(length)の数だけ繰り返す
       while (length_buffer--)
       {
-         *p_nos_buf++ = *p_in_buf;
-         // 0をupsampling_ratio回だけ繰り返す
+         // ある時点での値をupsampling_ratio回だけ繰り返す
          for (int i = 0; i < ratio - 1; i++)
-            *p_nos_buf++ = 0;
-         p_in_buf++;
+            *p_nos_buf++ = *p_in_buf;
+         *p_nos_buf++ = *p_in_buf++;
       }
 
       // データの長さ(length)の数だけ繰り返す
       for (int32_t sample = 0; sample < length * ratio; sample++)
       {
-         float temporary = nos[sample]; // FIRにおけるある時点での値
+         float temporary = nos[sample]; // IIRにおけるある時点での値
 
          // 段数(size_k / 6)の分だけフィルタ演算を繰り返す
          for (int32_t tap = 0; tap < size_k / 6; tap++)
@@ -372,6 +370,11 @@ IIR_FILTER IIR2x2L(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_
 IIR_FILTER IIR2x2R(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
 IIR_FILTER IIR4x3L(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
 IIR_FILTER IIR4x3R(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
+
+FIR_FILTER FIR2x2L(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, coef_fir_filter_2x_1);
+FIR_FILTER FIR2x2R(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, coef_fir_filter_2x_1);
+FIR_FILTER FIR4x3L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING2, coef_fir_filter_4x_0);
+FIR_FILTER FIR4x3R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING2, coef_fir_filter_4x_0);
 
 static unsigned char clock_old = 0;
 static unsigned char push_buffer_old = 0;
@@ -459,12 +462,16 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
          uint32_t len_R = FIR4x0R.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
 
          // upsampling1 : 176.4kHz to 352.8kHz IIR
-         len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
-         len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         //len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+         //len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         len_L = FIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+         len_R = FIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
 
          // upsampling2 : 352.8kHz to 1411.2kHz IIR
-         len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
-         len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         //len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+         //len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         len_L = FIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+         len_R = FIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
 
          // floatをint32にキャスト
          int32_t* out_buf_L = new int32_t[len_L];

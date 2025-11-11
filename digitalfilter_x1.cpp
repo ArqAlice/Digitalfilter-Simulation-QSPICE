@@ -238,10 +238,11 @@ public:
       // データの長さ(length)の数だけ繰り返す
       while (length_buffer--)
       {
-         *p_nos_buf++ = *(p_in_buf++);
+         *p_nos_buf++ = *p_in_buf;
          // 0をupsampling_ratio回だけ繰り返す
          for (int i = 0; i < ratio - 1; i++)
             *p_nos_buf++ = 0;
+         p_in_buf++;
       }
 
       // データの長さ(length)の数だけ繰り返す
@@ -302,10 +303,11 @@ public:
       // データの長さ(length)の数だけ繰り返す
       while (length_buffer--)
       {
-         *p_nos_buf++ = *(p_in_buf++);
+         *p_nos_buf++ = *p_in_buf;
          // 0をupsampling_ratio回だけ繰り返す
          for (int i = 0; i < ratio - 1; i++)
             *p_nos_buf++ = 0;
+         p_in_buf++;
       }
 
       // データの長さ(length)の数だけ繰り返す
@@ -364,9 +366,12 @@ RING_BUFFER usb_buffer_R(SIZE_USB_BUFFER);
 RING_BUFFER output_buffer_L(SIZE_OUTPUT_BUFFER);
 RING_BUFFER output_buffer_R(SIZE_OUTPUT_BUFFER);
 
-FIR_FILTER FIR4x0(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, coef_fir_filter_4x_0);
-IIR_FILTER IIR2x2(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
-IIR_FILTER IIR4x3(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
+FIR_FILTER FIR4x0L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, coef_fir_filter_4x_0);
+FIR_FILTER FIR4x0R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, coef_fir_filter_4x_0);
+IIR_FILTER IIR2x2L(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
+IIR_FILTER IIR2x2R(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
+IIR_FILTER IIR4x3L(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
+IIR_FILTER IIR4x3R(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
 
 static unsigned char clock_old = 0;
 static unsigned char push_buffer_old = 0;
@@ -450,16 +455,16 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
          f32_scale_array(buffer_inR_float, upsampling_buffer_R0, GAIN_ANTICLIPPING, length);
 
          // upsampling0 : 44.1kHz to 176.4kHz FIR
-         uint32_t len_L = FIR4x0.interpolate(length, upsampling_buffer_L0, upsampling_buffer_L1);
-         uint32_t len_R = FIR4x0.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
+         uint32_t len_L = FIR4x0L.interpolate(length, upsampling_buffer_L0, upsampling_buffer_L1);
+         uint32_t len_R = FIR4x0R.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
 
          // upsampling1 : 176.4kHz to 352.8kHz IIR
-         len_L = IIR2x2.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
-         len_R = IIR2x2.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+         len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
 
          // upsampling2 : 352.8kHz to 1411.2kHz IIR
-         len_L = IIR4x3.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
-         len_R = IIR4x3.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+         len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
 
          // floatをint32にキャスト
          int32_t* out_buf_L = new int32_t[len_L];

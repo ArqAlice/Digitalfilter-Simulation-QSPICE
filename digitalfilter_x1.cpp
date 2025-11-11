@@ -210,6 +210,22 @@ int16_t RING_BUFFER::write_array(int32_t *input, uint32_t size)
    return 0;
 }
 
+// upsampling NOS
+uint32_t NOS_filter(uint32_t length, float *p_in, float *p_out, uint8_t upsampling_ratio)
+{
+   uint32_t length_buffer = length;
+
+   // データの長さ(length)の数だけ繰り返す
+   while (length_buffer--)
+   {
+      // ある時点での値をupsampling_ratio回だけ繰り返す
+      for (int i = 0; i < upsampling_ratio - 1; i++)
+         *p_out++ = *p_in;
+      *p_out++ = *(p_in++);
+   }
+   return length * upsampling_ratio;
+}
+
 class FIR_FILTER
 {
 public:
@@ -241,7 +257,7 @@ public:
          // ある時点での値をupsampling_ratio回だけ繰り返す
          for (int i = 0; i < ratio - 1; i++)
             *p_nos_buf++ = *p_in_buf;
-         *p_nos_buf++ = *p_in_buf++;
+         *p_nos_buf++ = *(p_in_buf++);
       }
 
       // データの長さ(length)の数だけ繰り返す
@@ -256,9 +272,7 @@ public:
             temporary += h[i] * (*(delay + i));
 
          // 遅延データの更新
-         for (int i = size_tap - 1; i > 0; i--)
-            *(delay + i) = *(delay + i - 1);
-         //memcpy(delay + 1, delay, sizeof(float) * (size_tap - 1));
+         memcpy(delay + 1, delay, sizeof(float) * (size_tap - 1));
 
          p_out[sample] = temporary; // 演算結果を出力
       }
@@ -305,7 +319,7 @@ public:
          // ある時点での値をupsampling_ratio回だけ繰り返す
          for (int i = 0; i < ratio - 1; i++)
             *p_nos_buf++ = *p_in_buf;
-         *p_nos_buf++ = *p_in_buf++;
+         *p_nos_buf++ = *(p_in_buf++);
       }
 
       // データの長さ(length)の数だけ繰り返す
@@ -420,8 +434,8 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
       int16_t is_buffer_full_L = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
       int16_t is_buffer_full_R = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
 
-      is_buffer_full_L |= usb_buffer_L.write(((int32_t)(signal_in0)) << 16); // ここでバッファに入力データを格納する
-      is_buffer_full_R |= usb_buffer_R.write(((int32_t)(signal_in1)) << 16); // ここでバッファに入力データを格納する
+      is_buffer_full_L |= usb_buffer_L.write(((int32_t)(signal_in0 - 0.5)) << 16); // ここでバッファに入力データを格納する
+      is_buffer_full_R |= usb_buffer_R.write(((int32_t)(signal_in1 - 0.5)) << 16); // ここでバッファに入力データを格納する
 
       debug3 = is_buffer_full_L;
       can_write_usb_buffer = false; // 立てたフラグを解除する
@@ -462,16 +476,16 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
          uint32_t len_R = FIR4x0R.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
 
          // upsampling1 : 176.4kHz to 352.8kHz IIR
-         //len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
-         //len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
-         len_L = FIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
-         len_R = FIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+         len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         //len_L = FIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+         //len_R = FIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
 
          // upsampling2 : 352.8kHz to 1411.2kHz IIR
-         //len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
-         //len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
-         len_L = FIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
-         len_R = FIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+         len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         //len_L = FIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+         //len_R = FIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
 
          // floatをint32にキャスト
          int32_t* out_buf_L = new int32_t[len_L];

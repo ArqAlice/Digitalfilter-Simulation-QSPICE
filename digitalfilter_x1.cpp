@@ -8,26 +8,24 @@
 #include <math.h>
 #include <string.h>
 
-#define RATIO_UPSAMPLING (32)
-#define SIZE_USB_BUFFER (256)
-#define SIZE_OUTPUT_BUFFER (8192)
-#define OVERSAMPLING_TIMING_PRESCALE (1)
+#define INPUT_SIGNAL_FREQ (44100)
+#define GAIN_ANTICLIPPING (0.72)
 
 #define RATIO_UPSAMPLING0 (4)
 #define RATIO_UPSAMPLING1 (2)
 #define RATIO_UPSAMPLING2 (4)
 
-#define GAIN_ANTICLIPPING (0.6)
+#define RATIO_UPSAMPLING (RATIO_UPSAMPLING0 * RATIO_UPSAMPLING1 * RATIO_UPSAMPLING2)
+#define SIZE_USB_BUFFER ((INPUT_SIGNAL_FREQ / 1000 + 2) * 2)
+#define SIZE_OUTPUT_BUFFER (SIZE_USB_BUFFER * RATIO_UPSAMPLING0 * RATIO_UPSAMPLING1 * RATIO_UPSAMPLING2)
+#define OVERSAMPLING_TIMING_PRESCALE (1)
+#define THRESH_SIZE_START_UPSAMPLING (INPUT_SIGNAL_FREQ / 1000)
 
-typedef struct
-{
-   double debug[8];
-} DEBUG_INNER_FUNC;
 
 // Filter Params
 
 // FIR 4x filter0  44.1k/48k to 176.4k/192k
-const double coef_fir_filter_4x_0[] =
+const float coef_fir_filter_4x_0[] =
     {8.564405566961502e-06, 7.404604056595376e-05, 0.00036266640066355695, 0.001299162100418252, 0.0037516666321589518, 0.00917793794861192,
      0.01957952157841827, 0.037085849824722704, 0.06307301287985731, 0.09693950909637042, 0.13496213556504724, 0.16989354176822852,
      0.19194578910576668, 0.19139849242940513, 0.16232366554500807, 0.10611675385574962, 0.03310736637665369, -0.039119068335427526,
@@ -51,10 +49,10 @@ const double coef_fir_filter_4x_0[] =
      -4.143686752457605e-08, -4.970688922625634e-09, 1.4789229734804425e-08, 1.0044371520647718e-08, -2.4394975483586873e-09, -3.496525474792943e-09,
      6.576436052612324e-10, 2.377579249192807e-10};
 
-const uint32_t size_coef_fir_filter_4x_0 = sizeof(coef_fir_filter_4x_0) / sizeof(double);
+const uint32_t size_coef_fir_filter_4x_0 = sizeof(coef_fir_filter_4x_0) / sizeof(float);
 
 // FIR 2x filter1  88.2k/96k to 176.4k/192k
-const double coef_fir_filter_2x_1[] =
+const float coef_fir_filter_2x_1[] =
     {-9.487966163104853e-10, -3.5340924713787084e-09, 4.2726994320443245e-08, 1.3090689733882082e-07, -2.2939270286939258e-07, -1.518209169374895e-06,
      -1.676408401526929e-06, 4.729124291082094e-06, 1.7683314132634787e-05, 1.638726703834121e-05, -3.3577372621264804e-05, -0.00012270230405724014,
      -0.00013262201992526588, 0.00010618777396987576, 0.0005632025915198933, 0.0007699887185120032, 3.776474106860893e-05, -0.0017011106210167515,
@@ -64,24 +62,24 @@ const double coef_fir_filter_2x_1[] =
      0.14580390607737992, 0.2209550550852799, 0.24208720183672777, 0.21316488764332628, 0.1562901984488822, 0.09646656357981995,
      0.049991614557148484, 0.021443941069533172, 0.0073986748359036875, 0.0019479035135361207, 0.0003523537145792295, 3.3360564843645475e-05};
 
-const uint32_t size_coef_fir_filter_2x_1 = sizeof(coef_fir_filter_2x_1) / sizeof(double);
+const uint32_t size_coef_fir_filter_2x_1 = sizeof(coef_fir_filter_2x_1) / sizeof(float);
 
 // BQ-IIR 2x filter2  176.4k/192k to 352.8k/384k
-const double coef_bq_filter_2x_2[][6] =
+const float coef_bq_filter_2x_2[][6] =
     {{7.331409658980419e-06, 1.3658751350342684e-05, 7.331409658980423e-06, 1.0, -1.2816769353089004, 0.41422377350564477},
      {1.0, 1.106773090818239, 1.0, 1.0, -1.3472004160176496, 0.48473097896656375},
      {1.0, 0.43313123434498524, 1.0, 1.0, -1.4801044276329434, 0.6285025578761835},
      {1.0, 0.10967205424069733, 1.0, 1.0, -1.6862717576220687, 0.8532309485716787}};
 
-const uint32_t size_coef_bqfilter_2x_2 = sizeof(coef_bq_filter_2x_2) / sizeof(double);
+const uint32_t size_coef_bq_filter_2x_2 = sizeof(coef_bq_filter_2x_2) / sizeof(float);
 
 // BQ-IIR 4x filter0  352.8k/384k to 1411.2k/1536k
-const double coef_bq_filter_4x_0[][6] =
+const float coef_bq_filter_4x_3[][6] =
     {{5.387756499116675e-07, 5.295041771639956e-07, 5.387756499116674e-07, 1.0, -1.8012094984621612, 0.8117345477897354},
      {1.0, -0.8717934351807886, 1.0, 1.0, -1.84871679612354, 0.8594503158324095},
      {1.0, -1.3043326329001699, 1.0000000000000002, 1.0, -1.9353227815837257, 0.94648768126873}};
 
-const uint32_t size_coef_bq_filter_4x_0 = sizeof(coef_bq_filter_4x_0) / sizeof(double);
+const uint32_t size_coef_bq_filter_4x_3 = sizeof(coef_bq_filter_4x_3) / sizeof(float);
 
 union uData
 {
@@ -99,6 +97,24 @@ union uData
    char *str;
    unsigned char *bytes;
 };
+
+void int32_to_float_array(int32_t *input, float *output, uint32_t length)
+{
+   for(int i=0; i<length; i++)
+      output[i] = (float)input[i];
+}
+
+void float_to_int32_array(float *input, int32_t *output, uint32_t length)
+{
+   for(int i=0; i<length; i++)
+      output[i] = (int32_t)input[i];
+}
+
+void f32_scale_array(float* input, float* output, float gain, uint32_t length)
+{
+   for(int i=0; i<length; i++)
+      output[i] = input[i] * gain;
+}
 
 class RING_BUFFER
 {
@@ -194,34 +210,8 @@ int16_t RING_BUFFER::write_array(int32_t *input, uint32_t size)
    return 0;
 }
 
-uint32_t separate_ch(int32_t *p_in, int32_t *p_out, uint32_t length, uint8_t target_ch, uint8_t num_ch)
-{
-   uint32_t counter = 0;
-   for (uint32_t i = 0; i < length; i++)
-   {
-      if (i % num_ch == target_ch)
-      {
-         p_out[counter] = p_in[i];
-         counter++;
-      }
-   }
-   return counter;
-}
-
-uint32_t connect_2ch(int32_t *p_in0, int32_t *p_in1, int32_t *p_out, uint32_t length)
-{
-   uint32_t out_index = 0;
-   for (uint32_t i = 0; i < length; i++)
-   {
-      *p_out++ = *p_in0++;
-      *p_out++ = *p_in1++;
-      out_index += 2;
-   }
-   return out_index;
-}
-
 // upsampling NOS
-uint32_t NOS_filter(uint32_t length, int32_t *p_in, int32_t *p_out, uint8_t upsampling_ratio)
+uint32_t NOS_filter(uint32_t length, float *p_in, float *p_out, uint8_t upsampling_ratio)
 {
    uint32_t length_buffer = length;
 
@@ -236,64 +226,137 @@ uint32_t NOS_filter(uint32_t length, int32_t *p_in, int32_t *p_out, uint8_t upsa
    return length * upsampling_ratio;
 }
 
-// FIR filter
-uint32_t FIR_filter(uint32_t length, int32_t *p_in, int32_t *p_out, double *delay, const double *h, const uint16_t size_tap)
+class FIR_FILTER
 {
-   int count_out_size = 0;
-
-   // データの長さ(lemgth)の数だけ繰り返す
-   for (int sample = 0; sample < length; sample++)
+public:
+   FIR_FILTER(const uint32_t size, uint32_t upsampling_ratio, const float* h_)
    {
-      double temporary = 0;
+      h = new float[size];
+      delay = new float[size];
+      size_tap = size;
+      ratio = upsampling_ratio;
+      memcpy(h, h_, sizeof(float) * size);
+      memset(delay, 0, sizeof(float) * size);
+   };
 
-      *delay = (double)p_in[sample];
-
-      // FIRフィルタ演算 タップ数の数だけ足しこんでいく
-      for (int tap = 0; tap < size_tap; tap++)
-         temporary += h[tap] * (*(delay + tap));
-
-      // 遅延データの更新
-      for (int tap = size_tap - 1; tap > 0; tap--)
-         *(delay + tap) = *(delay + tap - 1);
-
-      p_out[sample] = (int32_t)temporary; // 演算結果を出力
-      count_out_size++;
-   }
-   return count_out_size;
-}
-
-// biquad IIR filter
-uint32_t IIR_BQ_filter(uint32_t length, int32_t *p_in, int32_t *p_out, double *delay_, const double *k_, const uint16_t size_tap)
-{
-   int count_out_size = 0;
-
-   // データの長さ(lemgth)の数だけ繰り返す
-   for (int32_t sample = 0; sample < length; sample++)
+   void reset_delay(void)
    {
-      double temporary = (double)p_in[sample]; // FIRにおけるある時点での値
+      memset(delay, 0, sizeof(float) * size_tap);
+   };
 
-      // 段数(size_tap)の分だけフィルタ演算を繰り返す
-      for (int32_t tap = 0; tap < size_tap; tap++)
+   uint32_t interpolate(uint32_t length, float* p_in, float* p_out)
+   {
+      uint32_t length_buffer = length;
+      float* p_in_buf = p_in;
+      float* nos = new float[length * ratio];
+      float* p_nos_buf = nos;
+
+      // データの長さ(length)の数だけ繰り返す
+      while (length_buffer--)
       {
-         double *delay = delay_ + tap * 4;
-         double *k = (double *)k_ + tap * 6;
-         double temporary_old = temporary;
-
-         // IIRフィルタ演算
-         temporary = temporary * (*(k + 0)) + *(delay + 0) * (*(k + 1)) + *(delay + 1) * (*(k + 2)) - *(delay + 2) * (*(k + 4)) - *(delay + 3) * (*(k + 5));
-
-         // 遅延データの更新
-         *(delay + 1) = *(delay + 0);
-         *(delay + 0) = temporary_old;
-         *(delay + 3) = *(delay + 2);
-         *(delay + 2) = temporary;
+         // ある時点での値をupsampling_ratio回だけ繰り返す
+         for (int i = 0; i < ratio - 1; i++)
+            *p_nos_buf++ = *p_in_buf;
+         *p_nos_buf++ = *(p_in_buf++);
       }
 
-      p_out[sample] = (int32_t)temporary; // 演算結果を出力
-      count_out_size++;
+      // データの長さ(length)の数だけ繰り返す
+      for (int sample = 0; sample < length * ratio; sample++)
+      {
+         float temporary = 0;
+
+         *delay = nos[sample];
+
+         // FIRフィルタ演算 タップ数の数だけ足しこんでいく
+         for (int i = 0; i < size_tap; i++)
+            temporary += h[i] * (*(delay + i));
+
+         // 遅延データの更新
+         memcpy(delay + 1, delay, sizeof(float) * (size_tap - 1));
+
+         p_out[sample] = temporary; // 演算結果を出力
+      }
+      delete[] nos;
+      return length * ratio;
    }
-   return count_out_size;
-}
+
+private:
+   float* h;
+   float* delay;
+   uint32_t size_tap;
+   uint32_t ratio;
+};
+
+class IIR_FILTER
+{
+public:
+   IIR_FILTER(const uint32_t size, uint32_t upsampling_ratio, const float* k_)
+   {
+      k = new float[size];
+      size_k = size;
+      size_delay = size / 6 * 4;
+      delay = new float[size_delay];
+      ratio = upsampling_ratio;
+      memcpy(k, k_, sizeof(float) * size_k);
+      memset(delay, 0, sizeof(float) * size_delay);
+   };
+
+   void reset_delay(void)
+   {
+      memset(delay, 0, sizeof(float) * size_delay);
+   };
+
+   uint32_t interpolate(uint32_t length, float* p_in, float* p_out)
+   {
+      uint32_t length_buffer = length;
+      float* p_in_buf = p_in;
+      float* nos = new float[length * ratio];
+      float * p_nos_buf = nos;
+
+      // データの長さ(length)の数だけ繰り返す
+      while (length_buffer--)
+      {
+         // ある時点での値をupsampling_ratio回だけ繰り返す
+         for (int i = 0; i < ratio - 1; i++)
+            *p_nos_buf++ = *p_in_buf;
+         *p_nos_buf++ = *(p_in_buf++);
+      }
+
+      // データの長さ(length)の数だけ繰り返す
+      for (int32_t sample = 0; sample < length * ratio; sample++)
+      {
+         float temporary = nos[sample]; // IIRにおけるある時点での値
+
+         // 段数(size_k / 6)の分だけフィルタ演算を繰り返す
+         for (int32_t tap = 0; tap < size_k / 6; tap++)
+         {
+            float *delay_ = delay + tap * 4;
+            float *k_ = k + tap * 6;
+            float temporary_old = temporary;
+
+            // IIRフィルタ演算
+            temporary = temporary * (*(k_ + 0)) + *(delay_ + 0) * (*(k_ + 1)) + *(delay_ + 1) * (*(k_ + 2)) - *(delay_ + 2) * (*(k_ + 4)) - *(delay_ + 3) * (*(k_ + 5));
+
+            // 遅延データの更新
+            *(delay_ + 1) = *(delay_ + 0);
+            *(delay_ + 0) = temporary_old;
+            *(delay_ + 3) = *(delay_ + 2);
+            *(delay_ + 2) = temporary;
+         }
+
+         p_out[sample] = temporary; // 演算結果を出力
+      }
+      delete[] nos;
+      return length * ratio;
+   }
+
+private:
+   float* k;
+   float* delay;
+   uint32_t size_k;
+   uint32_t size_delay;
+   uint32_t ratio;
+};
 
 // int DllMain() must exist and return 1 for a process to load the .DLL
 // See https://docs.microsoft.com/en-us/windows/win32/dlls/dllmain for more information.
@@ -310,16 +373,22 @@ int __stdcall DllMain(void *module, unsigned int reason, void *reserved) { retur
 #undef output0
 #undef output1
 
-DEBUG_INNER_FUNC debug_infuc1;
-
-static bool is_initialized = false;
-
 RING_BUFFER usb_buffer_L(SIZE_USB_BUFFER);
 RING_BUFFER usb_buffer_R(SIZE_USB_BUFFER);
-RING_BUFFER oversampling_buffer_L(SIZE_OUTPUT_BUFFER);
-RING_BUFFER oversampling_buffer_R(SIZE_OUTPUT_BUFFER);
 RING_BUFFER output_buffer_L(SIZE_OUTPUT_BUFFER);
 RING_BUFFER output_buffer_R(SIZE_OUTPUT_BUFFER);
+
+FIR_FILTER FIR4x0L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, coef_fir_filter_4x_0);
+FIR_FILTER FIR4x0R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING0, coef_fir_filter_4x_0);
+IIR_FILTER IIR2x2L(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
+IIR_FILTER IIR2x2R(size_coef_bq_filter_2x_2, RATIO_UPSAMPLING1, &coef_bq_filter_2x_2[0][0]);
+IIR_FILTER IIR4x3L(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
+IIR_FILTER IIR4x3R(size_coef_bq_filter_4x_3, RATIO_UPSAMPLING2, &coef_bq_filter_4x_3[0][0]);
+
+FIR_FILTER FIR2x2L(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, coef_fir_filter_2x_1);
+FIR_FILTER FIR2x2R(size_coef_fir_filter_2x_1, RATIO_UPSAMPLING1, coef_fir_filter_2x_1);
+FIR_FILTER FIR4x3L(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING2, coef_fir_filter_4x_0);
+FIR_FILTER FIR4x3R(size_coef_fir_filter_4x_0, RATIO_UPSAMPLING2, coef_fir_filter_4x_0);
 
 static unsigned char clock_old = 0;
 static unsigned char push_buffer_old = 0;
@@ -327,13 +396,6 @@ static uint32_t prescale_counter = 0;
 static bool can_output = false;
 static bool can_write_usb_buffer = false;
 static uint32_t prescale_counter2 = 0;
-
-static double *fir_delay_buffer_L = (double *)malloc(sizeof(double) * size_coef_fir_filter_4x_0);
-static double *fir_delay_buffer_R = (double *)malloc(sizeof(double) * size_coef_fir_filter_4x_0);
-static double *bq_delay_buffer_L_0 = (double *)malloc(sizeof(double) * size_coef_bqfilter_2x_2 / 6 * 4);
-static double *bq_delay_buffer_R_0 = (double *)malloc(sizeof(double) * size_coef_bqfilter_2x_2 / 6 * 4);
-static double *bq_delay_buffer_L_1 = (double *)malloc(sizeof(double) * size_coef_bq_filter_4x_0 / 6 * 4);
-static double *bq_delay_buffer_R_1 = (double *)malloc(sizeof(double) * size_coef_bq_filter_4x_0 / 6 * 4);
 
 extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, union uData *data)
 {
@@ -348,19 +410,6 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
    double &output1 = data[8].d;            // output
 
    // Implement module evaluation code here:
-
-   if (!is_initialized)
-   {
-      // initialize delay buffers
-      memset(fir_delay_buffer_L, 0, sizeof(double) * size_coef_fir_filter_4x_0);
-      memset(fir_delay_buffer_R, 0, sizeof(double) * size_coef_fir_filter_4x_0);
-      memset(bq_delay_buffer_L_0, 0, sizeof(double) * size_coef_bqfilter_2x_2 / 6 * 4);
-      memset(bq_delay_buffer_R_0, 0, sizeof(double) * size_coef_bqfilter_2x_2 / 6 * 4);
-      memset(bq_delay_buffer_L_1, 0, sizeof(double) * size_coef_bq_filter_4x_0 / 6 * 4);
-      memset(bq_delay_buffer_R_1, 0, sizeof(double) * size_coef_bq_filter_4x_0 / 6 * 4);
-
-      is_initialized = true;
-   }
 
    // scheduler
    if (clock == 1 && clock_old == 0)
@@ -377,100 +426,89 @@ extern "C" __declspec(dllexport) void digitalfilter_x1(void **opaque, double t, 
    }
    clock_old = clock; // クロックの前回値を保存します
 
+   //debug1 = (double)can_write_usb_buffer;
+
    // input buffer
    if (can_write_usb_buffer)
    {
       int16_t is_buffer_full_L = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
       int16_t is_buffer_full_R = 0; // 入力リングバッファがフルでないことを確認するためのもの(デバッグ用)
 
-      is_buffer_full_L |= usb_buffer_L.write(((int32_t)(signal_in0 * GAIN_ANTICLIPPING)) << 16); // ここでバッファに入力データを格納する
-      is_buffer_full_R |= usb_buffer_R.write(((int32_t)(signal_in1 * GAIN_ANTICLIPPING)) << 16); // ここでバッファに入力データを格納する
-      // debug1 = is_buffer_full_L;
+      is_buffer_full_L |= usb_buffer_L.write(((int32_t)(signal_in0 - 0.5)) << 16); // ここでバッファに入力データを格納する
+      is_buffer_full_R |= usb_buffer_R.write(((int32_t)(signal_in1 - 0.5)) << 16); // ここでバッファに入力データを格納する
+
+      debug3 = is_buffer_full_L;
       can_write_usb_buffer = false; // 立てたフラグを解除する
    }
+
+   debug1 = (double)usb_buffer_L.get_size();
 
    // upsampling and cueue output buffer
    // push_buffer信号に同期して実行される
    if (push_buffer == 1 && push_buffer_old == 0)
    {
       // decueue input ringbuffer バッファからデータを読み込む
-      uint32_t size_buffer = usb_buffer_L.get_size(); // 入力バッファに格納されたデータ量を取得する
-      debug1 = size_buffer;
-      int32_t *usb_dequeue_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer); // バッファから取り出すデータの仮保存先(配列)を割り当てる
-      int32_t *usb_dequeue_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer); // バッファから取り出すデータの仮保存先(配列)を割り当てる
-      usb_buffer_L.read_array(usb_dequeue_buffer_L, size_buffer);                       // バッファから仮保存先の配列にデータを読み込む
-      usb_buffer_R.read_array(usb_dequeue_buffer_R, size_buffer);                       // バッファから仮保存先の配列にデータを読み込む
+      uint32_t length = usb_buffer_L.get_size(); // 入力バッファに格納されたデータ量を取得する
+      if(length >= THRESH_SIZE_START_UPSAMPLING)
+      {
+         int32_t *usb_dequeue_buffer_L = new int32_t[length];   // バッファから取り出すデータの仮保存先(配列)を割り当てる
+         int32_t *usb_dequeue_buffer_R = new int32_t[length];   // バッファから取り出すデータの仮保存先(配列)を割り当てる
+         usb_buffer_L.read_array(usb_dequeue_buffer_L, length); // バッファから仮保存先の配列にデータを読み込む
+         usb_buffer_R.read_array(usb_dequeue_buffer_R, length); // バッファから仮保存先の配列にデータを読み込む
 
-      // Prepareing buffers アップサンプリング処理の一時データ保存先を作る
-      int32_t *NOS_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
-      int32_t *NOS_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
-      int32_t *output_pre_buffer_L = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
-      int32_t *output_pre_buffer_R = (int32_t *)malloc(sizeof(int32_t) * size_buffer * RATIO_UPSAMPLING);
+         float* buffer_inL_float = new float[length];
+         float* buffer_inR_float = new float[length];
+         int32_to_float_array(usb_dequeue_buffer_L, buffer_inL_float, length);
+         int32_to_float_array(usb_dequeue_buffer_R, buffer_inR_float, length);
 
-      // upsampling0 : 44.1kHz to 176.4kHz NOS→FIR
-      uint32_t size_NOS0 = NOS_filter(size_buffer, usb_dequeue_buffer_L, NOS_buffer_L, RATIO_UPSAMPLING0);
-      NOS_filter(size_buffer, usb_dequeue_buffer_R, NOS_buffer_R, RATIO_UPSAMPLING0);
+         // Prepareing buffers アップサンプリング処理の一時データ保存先を作る
+         float *upsampling_buffer_L0 = new float[length * RATIO_UPSAMPLING];
+         float *upsampling_buffer_L1 = new float[length * RATIO_UPSAMPLING];
+         float *upsampling_buffer_R0 = new float[length * RATIO_UPSAMPLING];
+         float *upsampling_buffer_R1 = new float[length * RATIO_UPSAMPLING];
 
-      uint32_t size_filter0_out = FIR_filter(size_NOS0,
-                                             NOS_buffer_L,
-                                             output_pre_buffer_L,
-                                             fir_delay_buffer_L,
-                                             coef_fir_filter_4x_0,
-                                             size_coef_fir_filter_4x_0);
+         // アンチクリッピングゲインを乗じる
+         f32_scale_array(buffer_inL_float, upsampling_buffer_L0, GAIN_ANTICLIPPING, length);
+         f32_scale_array(buffer_inR_float, upsampling_buffer_R0, GAIN_ANTICLIPPING, length);
 
-      FIR_filter(size_NOS0,
-                 NOS_buffer_R,
-                 output_pre_buffer_R,
-                 fir_delay_buffer_R,
-                 coef_fir_filter_4x_0,
-                 size_coef_fir_filter_4x_0);
+         // upsampling0 : 44.1kHz to 176.4kHz FIR
+         uint32_t len_L = FIR4x0L.interpolate(length, upsampling_buffer_L0, upsampling_buffer_L1);
+         uint32_t len_R = FIR4x0R.interpolate(length, upsampling_buffer_R0, upsampling_buffer_R1);
 
-      // upsampling1 : 176.4kHz to 352.8kHz  NOS→IIR
-      uint32_t size_NOS1 = NOS_filter(size_filter0_out, output_pre_buffer_L, NOS_buffer_L, RATIO_UPSAMPLING1);
-      NOS_filter(size_filter0_out, output_pre_buffer_R, NOS_buffer_R, RATIO_UPSAMPLING1);
+         // upsampling1 : 176.4kHz to 352.8kHz IIR
+         len_L = IIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+         len_R = IIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
+         //len_L = FIR2x2L.interpolate(len_L, upsampling_buffer_L1, upsampling_buffer_L0);
+         //len_R = FIR2x2R.interpolate(len_R, upsampling_buffer_R1, upsampling_buffer_R0);
 
-      uint32_t size_filter1_out = IIR_BQ_filter(size_NOS1,
-                                                NOS_buffer_L,
-                                                output_pre_buffer_L,
-                                                bq_delay_buffer_L_0,
-                                                (const double *)coef_bq_filter_2x_2,
-                                                size_coef_bqfilter_2x_2 / 6);
+         // upsampling2 : 352.8kHz to 1411.2kHz IIR
+         len_L = IIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+         len_R = IIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
+         //len_L = FIR4x3L.interpolate(len_L, upsampling_buffer_L0, upsampling_buffer_L1);
+         //len_R = FIR4x3R.interpolate(len_R, upsampling_buffer_R0, upsampling_buffer_R1);
 
-      IIR_BQ_filter(size_NOS1,
-                    NOS_buffer_R,
-                    output_pre_buffer_R,
-                    bq_delay_buffer_R_0,
-                    (const double *)coef_bq_filter_2x_2,
-                    size_coef_bqfilter_2x_2 / 6);
+         // floatをint32にキャスト
+         int32_t* out_buf_L = new int32_t[len_L];
+         int32_t* out_buf_R = new int32_t[len_R];
+         float_to_int32_array(upsampling_buffer_L1, out_buf_L, len_L);
+         float_to_int32_array(upsampling_buffer_R1, out_buf_R, len_R);
 
-      // upsampling2 : 352.8kHz to 1411.2kHz  NOS→IIR
-      uint32_t size_NOS2 = NOS_filter(size_filter1_out, output_pre_buffer_L, NOS_buffer_L, RATIO_UPSAMPLING2);
-      NOS_filter(size_filter1_out, output_pre_buffer_R, NOS_buffer_R, RATIO_UPSAMPLING2);
+         // packing output buffer 出力バッファに書き込む
+         output_buffer_L.write_array(out_buf_L, len_L);
+         output_buffer_R.write_array(out_buf_R, len_R);
 
-      uint32_t size_filter2_out = IIR_BQ_filter(size_NOS2,
-                                                NOS_buffer_L,
-                                                output_pre_buffer_L,
-                                                bq_delay_buffer_L_1,
-                                                (const double *)coef_bq_filter_4x_0,
-                                                size_coef_bq_filter_4x_0 / 6);
-
-      IIR_BQ_filter(size_NOS2,
-                    NOS_buffer_R,
-                    output_pre_buffer_R,
-                    bq_delay_buffer_R_1,
-                    (const double *)coef_bq_filter_4x_0,
-                    size_coef_bq_filter_4x_0 / 6);
-
-      // packing output buffer 出力バッファに書き込む
-      output_buffer_L.write_array(output_pre_buffer_L, size_filter2_out);
-      output_buffer_R.write_array(output_pre_buffer_R, size_filter2_out);
-
-      free(usb_dequeue_buffer_L);
-      free(usb_dequeue_buffer_R);
-      free(NOS_buffer_L);
-      free(NOS_buffer_R);
-      free(output_pre_buffer_L);
-      free(output_pre_buffer_R);
+         // メモリを解放
+         delete[] usb_dequeue_buffer_L;
+         delete[] usb_dequeue_buffer_R;
+         delete[] buffer_inL_float;
+         delete[] buffer_inR_float;
+         delete[] upsampling_buffer_L0;
+         delete[] upsampling_buffer_L1;
+         delete[] upsampling_buffer_R0;
+         delete[] upsampling_buffer_R1;
+         delete[] out_buf_L;
+         delete[] out_buf_R;
+      }
    }
    push_buffer_old = push_buffer; // push_bufferの前回値を更新
 
